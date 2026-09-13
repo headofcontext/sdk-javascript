@@ -1,0 +1,61 @@
+# Versioning and releases from Conventional Commits, as in the core repository.
+# release-please keeps a release PR open on main; merging it bumps the version
+# (package.json, src/index.ts), tags vX.Y.Z and publishes the GitHub release with the
+# generated notes. The publish job is chained here rather than triggered by the tag: tags
+# created with GITHUB_TOKEN never fire another workflow.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: write   # attach the tarball to the GitHub release
+      id-token: write   # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm pack
+      - name: Attach the tarball to the GitHub release
+        run: gh release upload "$TAG" ./*.tgz
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+      # Trusted publishing (OIDC): no NPM_TOKEN; the package's trusted publisher on npmjs.com
+      # names this repository and workflow. Requires npm >= 11.5.
+      - run: npm install -g npm@latest
+      - run: npm publish --provenance --access public

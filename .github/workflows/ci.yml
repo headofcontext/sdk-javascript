@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# One run per branch; a newer push cancels the previous run (the contract job costs ~6 min).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm pack
+
+  # The client against the real service, at the core commit the contract was copied from
+  # (contract/core-ref, written by scripts/sync_contract.sh). Same stack as the core's own
+  # integration tests: OpenFGA, Keycloak with the ACME realm, PostgreSQL, the service image.
+  contract:
+    runs-on: ubuntu-latest
+    needs: fast
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: core
+        run: echo "ref=$(cat contract/core-ref)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: headofcontext/headofcontext
+          ref: ${{ steps.core.outputs.ref }}
+          path: core
+      - name: The contract is the one published by the pinned core commit
+        run: diff -u core/docs/openapi.json contract/openapi.json
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: core/uv.lock
+      - name: Start OpenFGA, Keycloak (ACME realm), PostgreSQL
+        working-directory: core
+        run: docker compose up -d --wait postgres openfga keycloak otel-collector
+      - name: Load the OpenFGA model and the ACME tuples
+        working-directory: core
+        run: |
+          uv sync --locked
+          uv run hoc model load --url http://localhost:8080
+          uv run hoc fixtures load
+      - name: Start the HeadOfContext service
+        working-directory: core
+        run: docker compose --profile api up -d --wait --build hoc
+      - run: pnpm test:contract
+        env:
+          HOC_API_URL: http://localhost:8000
+          HOC_KEYCLOAK_URL: http://localhost:8180
+          HOC_ACME_FIXTURES: ${{ github.workspace }}/core/fixtures/acme/generated
+      - if: failure()
+        working-directory: core
+        run: docker compose --profile api logs hoc
+      - if: always()
+        working-directory: core
+        run: docker compose --profile api down -v

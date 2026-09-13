@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/headofcontext/sdk-javascript/security/advisories/new
+    about: A token or a decision the client could get wrong goes through private reporting, never a public issue.
+  - name: Service issues
+    url: https://github.com/headofcontext/headofcontext/issues
+    about: A wrong decision is a service issue and belongs to the core repository.

@@ -1,0 +1,25 @@
+name: Bug report
+description: A crash, a wrong mapping of the contract, a documentation gap. Not for vulnerabilities.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        A token appearing where it should not, or a decision presented wider than the service
+        returned it, is a vulnerability: use **Report a vulnerability** instead of this form.
+  - type: input
+    id: version
+    attributes:
+      label: Client version and runtime (Node, Deno, Bun, browser)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
