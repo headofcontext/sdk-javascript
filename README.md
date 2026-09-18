@@ -1,9 +1,9 @@
 # @headofcontext/client
 
 Thin TypeScript client for the [HeadOfContext](https://github.com/headofcontext/headofcontext)
-service: the single authorization layer for enterprise AI agents (READ, ACT, DELEGATE,
-REMEMBER). No runtime dependency; built on the global `fetch`. Node 20+, Deno, Bun and
-browsers.
+service, the authorization layer for teams where everyone builds agents: each agent inherits
+the rights of the person behind it, never more (READ, ACT, DELEGATE, REMEMBER). No runtime
+dependency; built on the global `fetch`. Node 20+, Deno, Bun and browsers.
 
 ```bash
 npm install @headofcontext/client
