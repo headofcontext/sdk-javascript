@@ -20,9 +20,12 @@ export class StaticToken implements TokenProvider {
   }
 }
 
-export interface KeycloakClientCredentialsOptions {
-  /** The OIDC issuer, e.g. `https://keycloak.example.com/realms/acme`. */
-  issuer: string;
+export interface ClientCredentialsOptions {
+  /**
+   * The token endpoint itself, e.g. `https://cloud.headofcontext.com/oauth/token` or
+   * `https://keycloak.example.com/realms/acme/protocol/openid-connect/token`.
+   */
+  tokenUrl: string;
   clientId: string;
   clientSecret: string;
   /** Override the global `fetch` (tests, custom agents). */
@@ -32,9 +35,9 @@ export interface KeycloakClientCredentialsOptions {
   refreshMarginSeconds?: number;
 }
 
-/** OAuth 2.0 client credentials against an OIDC issuer; caches the token until near expiry. */
-export class KeycloakClientCredentials implements TokenProvider {
-  readonly #issuer: string;
+/** OAuth 2.0 client credentials against any token endpoint; caches the token until near expiry. */
+export class ClientCredentials implements TokenProvider {
+  readonly tokenUrl: string;
   readonly #clientId: string;
   readonly #clientSecret: string;
   readonly #fetch: Fetch;
@@ -42,8 +45,11 @@ export class KeycloakClientCredentials implements TokenProvider {
   readonly #marginMs: number;
   #cached: { token: string; expiresAt: number } | null = null;
 
-  constructor(options: KeycloakClientCredentialsOptions) {
-    this.#issuer = options.issuer.replace(/\/+$/, "");
+  constructor(options: ClientCredentialsOptions) {
+    if (!/^https?:\/\//.test(options.tokenUrl)) {
+      throw new TypeError("tokenUrl must be an absolute http(s) URL");
+    }
+    this.tokenUrl = options.tokenUrl;
     this.#clientId = options.clientId;
     this.#clientSecret = options.clientSecret;
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -57,7 +63,7 @@ export class KeycloakClientCredentials implements TokenProvider {
     }
     let body: unknown;
     try {
-      const response = await this.#fetch(`${this.#issuer}/protocol/openid-connect/token`, {
+      const response = await this.#fetch(this.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -82,5 +88,19 @@ export class KeycloakClientCredentials implements TokenProvider {
     const expiresIn = Number((body as { expires_in?: unknown }).expires_in ?? 300);
     this.#cached = { token, expiresAt: Date.now() + expiresIn * 1000 };
     return token;
+  }
+}
+
+export interface KeycloakClientCredentialsOptions
+  extends Omit<ClientCredentialsOptions, "tokenUrl"> {
+  /** The OIDC issuer, e.g. `https://keycloak.example.com/realms/acme`. */
+  issuer: string;
+}
+
+/** Client credentials against a Keycloak realm, given its issuer URL. */
+export class KeycloakClientCredentials extends ClientCredentials {
+  constructor(options: KeycloakClientCredentialsOptions) {
+    const { issuer, ...rest } = options;
+    super({ ...rest, tokenUrl: `${issuer.replace(/\/+$/, "")}/protocol/openid-connect/token` });
   }
 }
