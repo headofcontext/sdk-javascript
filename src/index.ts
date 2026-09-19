@@ -1,6 +1,8 @@
 /** @headofcontext/client: thin client for the HeadOfContext service. */
 
 export {
+  ClientCredentials,
+  type ClientCredentialsOptions,
   type Fetch,
   KeycloakClientCredentials,
   type KeycloakClientCredentialsOptions,
